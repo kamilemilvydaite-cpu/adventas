@@ -100,6 +100,7 @@
     load("fonas", null), load("eglute", phTree()), load("zibintas", phLantern(false)), load("zibintas-pasaka", phLantern(true)),
     ...[1, 2, 3, 4].map((v) => load(`namelis-${v}`, phHouse(v))),
     ...[1, 2, 3, 4].map((v) => load(`namelis-${v}-atviras`, null)),
+    ...[1, 2, 3, 4].map((v) => load(`namelis-${v}-v`, null)),
     ...[1, 2, 3].map((f) => load(`elfas-berniukas-${f}`, phElf(false, f))),
     ...[1, 2, 3].map((f) => load(`elfas-mergaite-${f}`, phElf(true, f))),
     load("katinas-eina", null), load("katinas-kalba", null), load("katinas-moja", null),
@@ -180,24 +181,51 @@
     const e = roadAt(r, s1); out.push({ x: e.x, y: e.y });
     return out;
   }
+  function roadYX(r, x) {                         // kelio vidurio taškas ties x; grąžina ir atstumą nuo aikštės
+    const { pts, cum } = ROADS[r];
+    const inside = (a, b) => (x - a) * (x - b) <= 0;
+    for (let i = 1; i < pts.length; i++) {
+      if (inside(pts[i - 1][0], pts[i][0])) {
+        const k = (x - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]);
+        return { y: pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * k, s: cum[i - 1] + (cum[i] - cum[i - 1]) * k };
+      }
+    }
+    return { y: pts[0][1], s: 0 };                // arčiau aikštės nei kelio pradžia
+  }
+  // Namelių vietos, parinktos ranka pagal foną: [x, pusė] kiekvienam keliui nuo aikštės į išorę.
+  // Pusė: 1 = virš kelio (durys prie pat kelio), -1 = žemiau kelio. Keičiant foną, pataisyti.
+  const HOUSE_W = 130;
+  const HOUSES = [
+    [[705, 1], [640, -1], [560, 1], [500, -1], [425, 1], [360, -1]],
+    [[1215, 1], [1280, -1], [1360, 1], [1420, -1], [1495, 1], [1560, -1]],
+    [[715, 1], [760, -1], [590, 1], [610, -1], [465, 1], [345, 1]],
+    [[1220, 1], [1175, -1], [1345, 1], [1325, -1], [1470, 1], [1595, 1]]
+  ];
   function layout() {
     const out = [];
-    ROADS.forEach((road, r) => {
-      const top = r < 2, f0 = 0.2, f1 = top ? 0.84 : 0.92;
-      for (let k = 0; k < 6; k++) {
-        const s = road.len * (f0 + (f1 - f0) * k / 5), p = roadAt(r, s);
-        let ux = -p.ty, uy = p.tx; if (uy > 0) { ux = -ux; uy = -uy; }          // "aukštyn" nuo kelio
-        const side = (k % 2 === 0) === top ? 1 : -1;                              // 1 = namelis virš kelio
-        const sg = -Math.sign(p.tx) || 1;                                         // kryptis aikštės link (x ašimi)
-        const stopS = Math.max(0, s - 120), hx = p.x + ux * side * 105, hy = p.y + uy * side * 105 + 70;
-        out.push({
-          day: r * 6 + k + 1, r, s: stopS, sg,
-          house: { x: hx, y: hy },
-          lantern: { x: hx - sg * (top ? 84 : 98), y: hy + 2 },   // žibintas šalia namelio, išorinėje pusėje
-          cat: { x: hx + sg * 118, y: hy + 16 },           // katinas tarp žibinto ir durų
-          elf: { x: hx + sg * 36, y: hy + 24 }             // elfas išeina ir atsistoja šalia katino
-        });
-      }
+    HOUSES.forEach((list, r) => {
+      const sg = r % 2 === 0 ? 1 : -1;            // kryptis aikštės link (x ašimi)
+      list.forEach(([hx, side], k) => {
+        const ry = roadYX(r, hx).y;
+        const hy = side > 0 ? ry - 30 : ry + 40 + HOUSE_W * 0.88 * depth(ry + 150);
+        const w = HOUSE_W * depth(hy) / 2;        // pusė namelio pločio ekrane
+        let lantern, cat, elf;
+        if (side > 0) {                           // namelis virš kelio: viskas vyksta kelyje prieš duris
+          const cx = hx + sg * 105;
+          lantern = { x: hx - sg * (w + 16), y: hy + 6 };
+          cat = { x: cx, y: roadYX(r, cx).y + 8 };
+          elf = { x: hx + sg * 22, y: hy + 36 };
+        } else {                                  // namelis žemiau kelio: katinas nueina prie durų šonu
+          // žibintas kelio pakraštyje, tarpe tarp virš kelio stovinčių namelių (kad neužstotų jų durų)
+          const ups = list.filter((h) => h[1] > 0).map((h) => h[0]).sort((p, q) => p - q);
+          const gaps = [ups[0] - 75, ...ups.slice(1).map((u, i) => (u + ups[i]) / 2), ups[ups.length - 1] + 75];
+          const lx = gaps.reduce((best, g) => (Math.abs(g - hx) < Math.abs(best - hx) ? g : best));
+          lantern = { x: lx, y: roadYX(r, lx).y + 44 };
+          cat = { x: hx + sg * (w + 66), y: hy + 12 };
+          elf = { x: hx + sg * 34, y: hy + 22 };
+        }
+        out.push({ day: r * 6 + k + 1, r, sg, side, mirror: r % 2 === 1, s: roadYX(r, cat.x).s, house: { x: hx, y: hy }, lantern, cat, elf });
+      });
     });
     return out;
   }
@@ -214,7 +242,9 @@
     });
 
     SPOTS.forEach((s) => {
-      const v = (s.day - 1) % 4 + 1, d = CFG.durys[v], src = IMG[`namelis-${v}`];
+      const v = (s.day - 1) % 4 + 1, d0 = CFG.durys[v], mir = s.mirror && IMG[`namelis-${v}-v`];
+      const src = mir || IMG[`namelis-${v}`], d = mir ? { ...d0, x: 1 - d0.x - d0.w } : d0;
+      s.door = d;
       const h = obj("house", s.house.x, s.house.y, src), openSrc = IMG[`namelis-${v}-atviras`];
       if (openSrc) { h.classList.add("two"); h.querySelector(".inner").insertAdjacentHTML("beforeend", `<img class="openimg" src="${openSrc}" alt="">`); }
       const box = `left:${d.x * 100}%;top:${d.y * 100}%;width:${d.w * 100}%;height:${d.h * 100}%;`;
@@ -403,7 +433,7 @@
 
     const girl = day % 2 === 0, base = girl ? "elfas-mergaite-" : "elfas-berniukas-";
     const F = [1, 2, 3].map((f) => IMG[base + f]);
-    const d = CFG.durys[(day - 1) % 4 + 1];
+    const d = s.door;
     const hw = h.offsetWidth, hh = h.offsetHeight;   // namelio dydis ekrane be gylio mastelio
     const doorX = h._x + (d.x + d.w / 2 - 0.5) * hw * h._s, doorY = h._y - (1 - d.y - d.h) * hh * h._s;
     const eimg = elf.querySelector("img");
