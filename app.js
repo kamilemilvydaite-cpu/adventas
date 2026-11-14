@@ -80,10 +80,15 @@
   const IMG = {};
   function load(name, fallback) {
     return new Promise((res) => {
-      const im = new Image(), url = `assets/img/${name}.webp`;
-      im.onload = () => { IMG[name] = url; res(); };
-      im.onerror = () => { IMG[name] = fallback; res(); };
-      im.src = url;
+      // Ieško aplanke assets/img, o jei nėra, šalia index.html (kai failai įkelti be aplankų)
+      const urls = [`assets/img/${name}.webp`, `${name.split("/").pop()}.webp`];
+      (function next(i) {
+        if (i >= urls.length) { IMG[name] = fallback; return res(); }
+        const im = new Image();
+        im.onload = () => { IMG[name] = urls[i]; res(); };
+        im.onerror = () => next(i + 1);
+        im.src = urls[i];
+      })(0);
     });
   }
   // Katino dalys eisenai: [failas, kairė, viršus, plotis (1100x935 drobėje), sukimosi taškas x%, y%, klasė]
@@ -125,19 +130,22 @@
     varpelis: () => { tone("sine", 1320, 1320, 0.7, 0.15); setTimeout(() => tone("sine", 1760, 1760, 0.9, 0.12), 160); },
     uzrakinta: () => tone("square", 200, 130, 0.25, 0.08)
   };
+  function playFile(name) {       // groja assets/audio/NAME.mp3 arba NAME.mp3 šalia index.html; pažadas baigiasi nuskambėjus
+    const urls = [`assets/audio/${name}.mp3`, `${name}.mp3`];
+    return new Promise((res, rej) => {
+      (function next(i) {
+        if (i >= urls.length) return rej();
+        const a = new Audio(urls[i]);
+        a.onended = res; a.onerror = () => next(i + 1);
+        a.play().catch(() => next(i + 1));
+      })(0);
+    });
+  }
   function sfx(name) {            // bando assets/audio/NAME.mp3, kitaip sintetinis garsas
-    const a = new Audio(`assets/audio/${name}.mp3`);
-    a.onerror = () => SFX_FALLBACK[name] && SFX_FALLBACK[name]();
-    a.play().catch(() => SFX_FALLBACK[name] && SFX_FALLBACK[name]());
+    playFile(name).catch(() => SFX_FALLBACK[name] && SFX_FALLBACK[name]());
   }
   function voice(name, minMs) {   // grąžina pažadą, kuris baigiasi, kai įrašas nuskamba
-    return new Promise((res) => {
-      let done = false; const end = () => { if (!done) { done = true; res(); } };
-      const a = new Audio(`assets/audio/${name}.mp3`);
-      a.onended = end;
-      a.onerror = () => setTimeout(end, minMs);
-      a.play().catch(() => setTimeout(end, minMs));
-    });
+    return playFile(name).catch(() => sleep(minMs));
   }
 
   /* ---------- Scenos objektai ---------- */
@@ -470,7 +478,8 @@
     e.stopPropagation(); if (busy) return;
     const v = $("filmvideo"), msg = $("filmmsg");
     msg.hidden = true; v.hidden = false;
-    v.onerror = () => { v.hidden = true; msg.hidden = false; };
+    const alt = CFG.filmoFailas.split("/").pop();
+    v.onerror = () => { if (v.getAttribute("src") !== alt) { v.src = alt; v.play().catch(() => {}); } else { v.hidden = true; msg.hidden = false; } };
     v.src = CFG.filmoFailas; $("film").hidden = false;
     v.play().catch(() => {});
   }
