@@ -404,9 +404,10 @@
     const girl = day % 2 === 0, base = girl ? "elfas-mergaite-" : "elfas-berniukas-";
     const F = [1, 2, 3].map((f) => IMG[base + f]);
     const d = CFG.durys[(day - 1) % 4 + 1];
-    const doorX = h._x + (d.x + d.w / 2 - 0.5) * 140 * h._s, doorY = h._y - (1 - d.y - d.h) * 140 * h._s;
+    const hw = h.offsetWidth, hh = h.offsetHeight;   // namelio dydis ekrane be gylio mastelio
+    const doorX = h._x + (d.x + d.w / 2 - 0.5) * hw * h._s, doorY = h._y - (1 - d.y - d.h) * hh * h._s;
     const eimg = elf.querySelector("img");
-    const small = d.h * 140 * 0.9 / 168;         // elfas tarpduryje telpa į duris
+    const small = d.h * hh * 0.9 / 168;         // elfas tarpduryje telpa į duris
 
     sfx("durys"); h.classList.add("open");
     await sleep(1500);                           // durys atsidaro lėtai

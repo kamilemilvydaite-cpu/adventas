@@ -17,7 +17,7 @@ html, body {
 .obj img { display: block; width: 100%; height: auto; pointer-events: none; -webkit-user-drag: none; }
 
 /* Nameliai */
-.house { width: 140px; height: 140px; cursor: pointer; perspective: 500px; }
+.house { width: 160px; height: auto; cursor: pointer; perspective: 500px; }
 .house .interior, .house .door { position: absolute; }
 .house .interior { background: radial-gradient(circle at 50% 60%, #ffd98a, #7a3d10 85%); }
 .house .door {
