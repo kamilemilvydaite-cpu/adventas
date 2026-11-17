@@ -4,8 +4,8 @@
   const W = 1920, H = 1080;
   const C = { x: 960, y: 610 };                       // aikštės centras
   const CORNERS = [[170, 250], [1750, 250], [170, 930], [1750, 930]];
-  const FRONT = { x: 960, y: 678 };                   // vieta priešais eglutę
-  const ORBIT = { x: 960, y: 560, rx: 175, ry: 88 };  // katino ratas aplink eglutę
+  const FRONT = { x: 978, y: 700 };                   // vieta priešais eglutę
+  const ORBIT = { x: 978, y: 612, rx: 215, ry: 72 };   // centras ties eglutės apačia: priekinė rato pusė prieš eglutę, galinė už jos  // katino ratas aplink eglutę
   const $ = (id) => document.getElementById(id);
   const stage = $("stage"), world = $("world"), bubble = $("bubble");
   const pad = (n) => String(n).padStart(2, "0");
@@ -77,7 +77,7 @@
   }
 
   /* ---------- Paveikslėlių įkėlimas: tikras failas arba laikinas piešinys ---------- */
-  const IMG = {};
+  const IMG = {}, IMGSIZE = {};
   function load(name, fallback) {
     return new Promise((res) => {
       // Ieško aplanke assets/img, o jei nėra, šalia index.html (kai failai įkelti be aplankų)
@@ -85,7 +85,7 @@
       (function next(i) {
         if (i >= urls.length) { IMG[name] = fallback; return res(); }
         const im = new Image();
-        im.onload = () => { IMG[name] = urls[i]; res(); };
+        im.onload = () => { IMG[name] = urls[i]; IMGSIZE[name] = [im.naturalWidth, im.naturalHeight]; res(); };
         im.onerror = () => next(i + 1);
         im.src = urls[i];
       })(0);
@@ -108,7 +108,8 @@
     ...[1, 2, 3, 4].map((v) => load(`namelis-${v}-v`, null)),
     ...[1, 2, 3].map((f) => load(`elfas-berniukas-${f}`, phElf(false, f))),
     ...[1, 2, 3].map((f) => load(`elfas-mergaite-${f}`, phElf(true, f))),
-    load("katinas-eina", null), load("katinas-kalba", null), load("katinas-moja", null),
+    ...["elfas-berniukas", "elfas-mergaite"].flatMap((b) => [load(b + "-eina", null), load(b + "-kalba", null)]),
+    load("katinas-eina", null), load("katinas-eisena", null), load("katinas-kalba", null), load("katinas-moja", null),
     load("katinas-sedi-1", null), load("katinas-sedi-2", null),
     ...RIG_PARTS.map((p) => load("katinas/" + p[0], null))
   ];
@@ -166,10 +167,10 @@
   const houses = {}, lanterns = {};
   // Kelių vidurio linijos pagal foną (nuo aikštės į išorę). Keičiant foną, pataisyti šiuos taškus.
   const ROADS = [
-    [[800, 455], [700, 408], [600, 378], [530, 340], [470, 295], [400, 255], [310, 232], [210, 218]],
-    [[1125, 455], [1210, 405], [1300, 378], [1400, 350], [1470, 305], [1530, 265], [1600, 240], [1680, 225]],
-    [[795, 655], [700, 708], [620, 745], [520, 772], [420, 805], [330, 860], [240, 925], [140, 990]],
-    [[1140, 655], [1220, 708], [1300, 740], [1400, 772], [1500, 810], [1600, 860], [1700, 915], [1790, 970]]
+    [[760, 470], [700, 455], [620, 430], [540, 395], [490, 355], [460, 300], [438, 250], [395, 200], [350, 172]],
+    [[1200, 470], [1280, 450], [1360, 425], [1420, 390], [1455, 340], [1480, 290], [1510, 245], [1560, 215], [1620, 205]],
+    [[740, 650], [660, 672], [580, 700], [500, 732], [400, 772], [300, 820], [240, 848]],
+    [[1230, 645], [1300, 668], [1400, 708], [1500, 760], [1600, 825], [1700, 895], [1760, 920]]
   ].map((pts) => {
     const cum = [0];
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
@@ -189,60 +190,74 @@
     const e = roadAt(r, s1); out.push({ x: e.x, y: e.y });
     return out;
   }
-  function roadYX(r, x) {                         // kelio vidurio taškas ties x; grąžina ir atstumą nuo aikštės
-    const { pts, cum } = ROADS[r];
-    const inside = (a, b) => (x - a) * (x - b) <= 0;
+  function nearest(r, p) {                        // artimiausias kelio r taškas prie p; grąžina ir atstumą nuo aikštės
+    const { pts, cum } = ROADS[r]; let best = null;
     for (let i = 1; i < pts.length; i++) {
-      if (inside(pts[i - 1][0], pts[i][0])) {
-        const k = (x - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]);
-        return { y: pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * k, s: cum[i - 1] + (cum[i] - cum[i - 1]) * k };
-      }
+      const ax = pts[i - 1][0], ay = pts[i - 1][1], bx = pts[i][0] - ax, by = pts[i][1] - ay;
+      const k = Math.max(0, Math.min(1, ((p.x - ax) * bx + (p.y - ay) * by) / (bx * bx + by * by)));
+      const x = ax + bx * k, y = ay + by * k, d = Math.hypot(p.x - x, p.y - y);
+      if (!best || d < best.d) best = { x, y, d, s: cum[i - 1] + (cum[i] - cum[i - 1]) * k };
     }
-    return { y: pts[0][1], s: 0 };                // arčiau aikštės nei kelio pradžia
+    return best;
   }
-  // Namelių vietos, parinktos ranka pagal foną: [x, pusė] kiekvienam keliui nuo aikštės į išorę.
-  // Pusė: 1 = virš kelio (durys prie pat kelio), -1 = žemiau kelio. Keičiant foną, pataisyti.
-  const HOUSE_W = 130;
+  // Viskas parinkta ranka pagal foną (keičiant foną, pataisyti):
+  // [namelio x, y (apačia), kelias arba "L", katino x, y, žibinto x, y, (elfo x, y - nebūtina)].
+  // Kelias: 0 kairė viršus, 1 dešinė viršus, 2 kairė apačia, 3 dešinė apačia - juo katinas ateina ir sustoja.
+  // "L" = apatinė eilė: katinas ateina sniegu priešais namelius.
+  // Dienos iš eilės: 1-6 kairė viršus, 7-12 dešinė viršus, 13-18 kairė apačia, 19-24 dešinė apačia.
+  const HOUSE_W = 150, CX = 978;
   const HOUSES = [
-    [[705, 1], [640, -1], [560, 1], [500, -1], [425, 1], [360, -1]],
-    [[1215, 1], [1280, -1], [1360, 1], [1420, -1], [1495, 1], [1560, -1]],
-    [[715, 1], [760, -1], [590, 1], [610, -1], [465, 1], [345, 1]],
-    [[1220, 1], [1175, -1], [1345, 1], [1325, -1], [1470, 1], [1595, 1]]
+    [690, 404, 0, 575, 412, 770, 440], [630, 618, 2, 755, 652, 730, 622], [580, 305, 0, 462, 312, 664, 308],
+    [400, 500, 0, 590, 422, 490, 402, 500, 472], [520, 205, 0, 405, 222, 427, 186], [335, 335, 0, 478, 350, 421, 300],
+    [1270, 404, 1, 1385, 414, 1190, 440], [1325, 618, 3, 1210, 650, 1242, 622], [1354, 305, 1, 1472, 312, 1440, 302],
+    [1540, 500, 1, 1360, 426, 1452, 404, 1452, 478], [1470, 200, 1, 1592, 212, 1548, 190], [1590, 385, 1, 1440, 372, 1502, 335],
+    [840, 850, "L", 945, 886, 770, 868], [680, 842, "L", 785, 878, 715, 704], [480, 690, 2, 612, 692, 405, 738],
+    [520, 900, "L", 625, 936, 558, 752], [330, 758, 2, 460, 750, 262, 804], [360, 966, "L", 465, 1002, 398, 816],
+    [1120, 850, "L", 1015, 886, 1188, 868], [1280, 840, "L", 1175, 876, 1245, 696], [1480, 697, 3, 1348, 688, 1556, 760],
+    [1440, 902, "L", 1335, 938, 1400, 752], [1640, 798, 3, 1508, 768, 1705, 860], [1600, 1002, "L", 1495, 1038, 1562, 850]
   ];
   function layout() {
-    const out = [];
-    HOUSES.forEach((list, r) => {
-      const sg = r % 2 === 0 ? 1 : -1;            // kryptis aikštės link (x ašimi)
-      list.forEach(([hx, side], k) => {
-        const ry = roadYX(r, hx).y;
-        const hy = side > 0 ? ry - 30 : ry + 40 + HOUSE_W * 0.88 * depth(ry + 150);
-        const w = HOUSE_W * depth(hy) / 2;        // pusė namelio pločio ekrane
-        let lantern, cat, elf;
-        if (side > 0) {                           // namelis virš kelio: viskas vyksta kelyje prieš duris
-          const cx = hx + sg * 105;
-          lantern = { x: hx - sg * (w + 16), y: hy + 6 };
-          cat = { x: cx, y: roadYX(r, cx).y + 8 };
-          elf = { x: hx + sg * 22, y: hy + 36 };
-        } else {                                  // namelis žemiau kelio: katinas nueina prie durų šonu
-          // žibintas kelio pakraštyje, tarpe tarp virš kelio stovinčių namelių (kad neužstotų jų durų)
-          const ups = list.filter((h) => h[1] > 0).map((h) => h[0]).sort((p, q) => p - q);
-          const gaps = [ups[0] - 75, ...ups.slice(1).map((u, i) => (u + ups[i]) / 2), ups[ups.length - 1] + 75];
-          const lx = gaps.reduce((best, g) => (Math.abs(g - hx) < Math.abs(best - hx) ? g : best));
-          lantern = { x: lx, y: roadYX(r, lx).y + 44 };
-          cat = { x: hx + sg * (w + 66), y: hy + 12 };
-          elf = { x: hx + sg * 34, y: hy + 22 };
+    const out = [], lanes = { 2: [], 3: [] };
+    HOUSES.forEach(([hx, hy, via, cx, cy, lx, ly, ex, ey], i) => {
+      const mirror = hx > CX, w = HOUSE_W * depth(hy), tc = hx < CX ? 1 : -1;   // tc: kryptis centro link
+      const dx = hx + (mirror ? -1 : 1) * 0.07 * w;                              // durų vidurys
+      const cat = { x: cx, y: cy };
+      let elf, path;
+      if (via === "L") {                          // katinas ateina sniegu priešais namelių eilę
+        const r = hx < CX ? 2 : 3;
+        elf = { x: dx + tc * 18, y: hy + 26 };
+        lanes[r].push(cat);
+        path = [{ x: CX, y: 705 }, { x: CX, y: 800 }, ...lanes[r]];
+      } else {                                    // katinas sustoja kelyje, elfas išeina prie jo
+        elf = { x: dx + Math.max(-20, Math.min(20, (cx - dx) * 0.15)), y: hy + 28 };
+        path = [{ x: ROADS[via].pts[0][0], y: ROADS[via].pts[0][1] }, ...roadPath(via, 0, nearest(via, cat).s)];
+        path[path.length - 1] = cat;
+      }
+      if (ex) elf = { x: ex, y: ey };
+      // žibintas niekada nestovi ant grindinio: nustumiamas nuo kelio vidurio ir už aikštės krašto
+      const lan = { x: lx, y: ly };
+      for (let k = 0; k < 3; k++) {
+        for (let r = 0; r < 4; r++) {
+          const n = nearest(r, lan);
+          if (n.d < 64) {
+            let ux = lan.x - n.x, uy = lan.y - n.y, l = Math.hypot(ux, uy);
+            if (l < 1) { ux = hx - n.x; uy = hy - 60 - n.y; l = Math.hypot(ux, uy); }
+            lan.x = n.x + ux / l * 64; lan.y = n.y + uy / l * 64;
+          }
         }
-        out.push({ day: r * 6 + k + 1, r, sg, side, mirror: r % 2 === 1, s: roadYX(r, cat.x).s, house: { x: hx, y: hy }, lantern, cat, elf });
-      });
+        const qx = (lan.x - 978) / 285, qy = (lan.y - 563) / 162, q = Math.hypot(qx, qy);
+        if (q < 1) { lan.x = 978 + qx / q * 285; lan.y = 563 + qy / q * 162; }
+      }
+      out.push({ day: i + 1, mirror, house: { x: hx, y: hy }, lantern: lan, cat, elf, path });
     });
     return out;
   }
-  const SPOTS = layout();
+  const SPOTS = layout(); window.__SPOTS = SPOTS;
 
   function buildWorld() {
     if (IMG.fonas) $("bg").style.backgroundImage = `url("${IMG.fonas}")`; else $("bg").innerHTML = phBackground();
 
-    const tree = obj("tree", 960, 592, IMG.eglute);
+    const tree = obj("tree", 978, 606, IMG.eglute);
     [[50, 30], [35, 48], [64, 52], [28, 68], [50, 72], [72, 70], [20, 86], [42, 88], [62, 86], [80, 88]].forEach(([l, t], i) => {
       const b = document.createElement("i");
       b.style.cssText = `left:${l}%;top:${t}%;color:${["#ffd24a", "#ff6b5e", "#7fd4ff", "#fff"][i % 4]};animation-delay:${(i * 0.37) % 1.4}s`;
@@ -267,13 +282,16 @@
       lanterns[s.day] = l;
     });
 
-    filmLantern = obj("filmlantern", 960, 890, IMG["zibintas-pasaka"]);
+    filmLantern = obj("filmlantern", 1100, 290, IMG["zibintas-pasaka"]);
     filmLantern.insertAdjacentHTML("afterbegin", `<div class="glow"></div>`);
     filmLantern.addEventListener("pointerdown", openFilm);
 
     cat = obj("cat", ORBIT.x + ORBIT.rx, ORBIT.y, CAT.walk);
     cat.querySelector(".inner").insertAdjacentHTML("afterbegin", `<div class="shadow"></div>`);
-    if (RIG_PARTS.every((p) => IMG["katinas/" + p[0]])) {
+    if (IMG["katinas-eisena"]) {                  // eisena iš vaizdo įrašo kadrų (18 kadrų juosta)
+      cat.querySelector(".inner").insertAdjacentHTML("beforeend", `<div class="rig sprite" style="background-image:url('${IMG["katinas-eisena"]}')"></div>`);
+      CAT.rig = true;
+    } else if (RIG_PARTS.every((p) => IMG["katinas/" + p[0]])) {
       const parts = RIG_PARTS.map(([f, l, t, w, ox, oy, cls]) =>
         `<div class="part ${cls}" style="left:${l / 11}%;top:${t / 9.35}%;width:${w / 11}%;transform-origin:${ox}% ${oy}%">
            <img src="${IMG["katinas/" + f]}" alt="">${cls === "head" ? `<svg class="lids" viewBox="0 0 374 333"><g fill="#f5f2eb"><ellipse cx="189" cy="166" rx="40" ry="42"/><ellipse cx="292" cy="148" rx="31" ry="38"/></g><g fill="none" stroke="#5a4636" stroke-width="5" stroke-linecap="round"><path d="M158 172 q31 20 62 0"/><path d="M268 154 q24 18 48 0"/></g></svg>` : ""}
@@ -284,7 +302,7 @@
     cat.addEventListener("pointerdown", (e) => { e.stopPropagation(); catAnnounce(); });
 
     elf = obj("elf", 0, 0, "");
-    elf.querySelector(".inner").innerHTML = `<img alt="">`;
+    elf.querySelector(".inner").innerHTML = `<img alt=""><div class="esprite"></div>`;
     elf.querySelector(".flip").style.transformOrigin = "50% 100%";
   }
   let cat, elf, filmLantern;
@@ -332,24 +350,19 @@
     for (let i = 1; i <= n; i++) out.push(ell(a0 + d * i / n));
     return out;
   }
-  const onRoad = (s) => { const q = roadAt(s.r, s.s); return { x: q.x, y: q.y }; };
   function toEllipse() {                          // kelias nuo dabartinės vietos iki rato aplink eglutę
     if (where.type === "orbit") return { pts: [], a: angle };
     if (where.type === "front") return { pts: [ell(Math.PI / 2)], a: Math.PI / 2 };
-    const a = ang(entry(where.s.r));
-    return { pts: [onRoad(where.s), ...roadPath(where.s.r, where.s.s, 0), ell(a)], a };
+    const p = where.s.path, a = ang(p[0]);       // tuo pačiu keliu atgal
+    return { pts: [...p.slice(0, -1).reverse(), ell(a)], a };
   }
   async function goFront() {
     stopOrbit(); const { pts, a } = toEllipse();
     await walkPath([...pts, ...arc(a, Math.PI / 2), FRONT]); where = { type: "front" };
   }
   async function goHouse(s) {
-    stopOrbit();
-    if (where.type === "house" && where.s.r === s.r) await walkPath([onRoad(where.s), ...roadPath(s.r, where.s.s, s.s), s.cat]);
-    else {
-      const { pts, a } = toEllipse(), e = entry(s.r);
-      await walkPath([...pts, ...arc(a, ang(e)), e, ...roadPath(s.r, 0, s.s), s.cat]);
-    }
+    stopOrbit(); const { pts, a } = toEllipse();
+    await walkPath([...pts, ...arc(a, ang(s.path[0])), ...s.path]);
     where = { type: "house", s };
   }
   async function catHome() {
@@ -365,9 +378,9 @@
     bubble.style.top = Math.max(bh + 20, y) + "px";
     who.classList.add("talking");
     const img = who.querySelector(".inner > img"); let i = 0;
-    const timer = setInterval(() => { img.src = frames[i++ % 2]; }, 190);
+    const timer = frames && setInterval(() => { img.src = frames[i++ % 2]; }, 190);
     await voice(audioName, Math.max(2600, text.length * 75));
-    clearInterval(timer); img.src = frames[0];
+    if (timer) { clearInterval(timer); img.src = frames[0]; }
     who.classList.remove("talking"); bubble.hidden = true;
   }
 
@@ -417,6 +430,20 @@
     setCat(CAT.sit[0]); catAt = t; cat.classList.add('waiting'); busy = false;
   }
 
+  // Kadrų juostos: vienas kadras yra 360x520, todėl kadrų skaičių atpažįstame iš failo pločio.
+  const SPR_ASPECT = 360 / 520;
+  function sheetFrames(name) {
+    const sz = IMGSIZE[name];
+    return sz ? Math.max(1, Math.round(sz[0] / (sz[1] * SPR_ASPECT))) : 1;
+  }
+  function elfShow(name, animate, ms) {          // animate: "pirmyn", "pirmyn-atgal" arba null (sustingęs kadras)
+    const d = elf.querySelector(".esprite"), n = sheetFrames(name);
+    d.style.backgroundImage = `url("${IMG[name]}")`;
+    d.style.backgroundSize = `${n * 100}% 100%`;
+    d.style.backgroundPosition = "0 0";
+    d.style.animation = animate ? `espr ${ms}ms steps(${n}, jump-none) infinite ${animate === "pirmyn-atgal" ? "alternate" : ""}` : "none";
+  }
+
   function elfWalk(x, y, k1, dur) {             // elfas eina pėsčiomis ir artėdamas didėja
     return new Promise((res) => {
       const x0 = elf._x, y0 = elf._y, k0 = elf._k, t0 = performance.now(), flip = elf.querySelector(".flip"), dir = x < x0 - 4 ? -1 : 1;
@@ -441,6 +468,7 @@
 
     const girl = day % 2 === 0, base = girl ? "elfas-mergaite-" : "elfas-berniukas-";
     const F = [1, 2, 3].map((f) => IMG[base + f]);
+    const juosta = IMG[base + "eina"] && IMG[base + "kalba"];   // ar yra kadrų juostos iš vaizdo įrašo
     const d = s.door;
     const hw = h.offsetWidth, hh = h.offsetHeight;   // namelio dydis ekrane be gylio mastelio
     const doorX = h._x + (d.x + d.w / 2 - 0.5) * hw * h._s, doorY = h._y - (1 - d.y - d.h) * hh * h._s;
@@ -450,17 +478,24 @@
     sfx("durys"); h.classList.add("open");
     await sleep(1500);                           // durys atsidaro lėtai
     eimg.src = F[0]; elf._zmin = Math.round(h._y) + 1; elf._k = small;
+    elf.classList.toggle("sheet", !!juosta);
+    if (juosta) elfShow(base + "kalba", null);
     place(elf, doorX, doorY); elf.style.zIndex = elf._zmin;
     elf.querySelector(".flip").style.transform = `scale(${small})`;
     elf.classList.add("out");
     await sleep(900);                            // pastovi tarpduryje
-    await elfWalk(s.elf.x, s.elf.y, 0.85, 2200); // išeina ir atsistoja šalia katino
+    if (juosta) elfShow(base + "eina", "pirmyn", 3200);
+    await elfWalk(s.elf.x, s.elf.y, 0.85, 1600); // išeina ir atsistoja šalia katino
+    if (juosta) elfShow(base + "kalba", null);
     await sleep(300);
-    eimg.src = F[2]; await sleep(900);
+    if (!juosta) { eimg.src = F[2]; await sleep(900); } else await sleep(600);
     const text = `${CFG.elfoLabas} ${CFG.uzduotys[day] || ""} ${CFG.elfoAte}`;
-    await say(elf, s.elf.x, s.elf.y - 168 * 0.85 * elf._s - 20, text, `elfas-${pad(day)}`, [F[0], F[1]]);
-    eimg.src = F[2]; await sleep(1100); eimg.src = F[0];
-    await elfWalk(doorX, doorY, small, 2200);    // grįžta į namelį
+    if (juosta) elfShow(base + "kalba", "pirmyn-atgal", 2400);
+    await say(elf, s.elf.x, s.elf.y - 168 * 0.85 * elf._s - 20, text, `elfas-${pad(day)}`, juosta ? null : [F[0], F[1]]);
+    if (juosta) { elfShow(base + "kalba", null); await sleep(900); }
+    else { eimg.src = F[2]; await sleep(1100); eimg.src = F[0]; }
+    if (juosta) elfShow(base + "eina", "pirmyn", 3200);
+    await elfWalk(doorX, doorY, small, 1600);    // grįžta į namelį
     await sleep(300);
     elf.classList.remove("out");
     await sleep(500);
